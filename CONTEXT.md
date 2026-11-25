@@ -28,9 +28,9 @@
   - `shop.ts` — реликты (мягкая валюта), звёзды (рейтинг 1–3 за операцию),
     бусты перед забегом (Аегис/Литания/Фокус), гейты разблокировки.
   - `world.ts` — 8 биомов (пол/свет/препятствия), 4 layout'а препятствий.
-  - `player.ts` — модели героев (marine/terminator/dreadnought). ⚠ СЕЙЧАС
-    ПЕРЕДЕЛЫВАЕТСЯ: «шарики на ножках» → настоящие Астартес с геральдикой
-    Экзорцистов (см. refs/).
+  - `player.ts` — модели героев: GLB-архетипы (Tripo API), процедурные тела —
+    fallback. GLB_SOURCES/GLB_HEIGHT/GLB_ROT_Y задают файл, рост и поворот
+    каждого архетипа; debug-поворот: URL-параметр ?glbrot=<градусы>.
   - `bullets.ts` — пулы снарядов; свои летят ровно, вражеские вихляют/пульсируют.
   - `hud.ts` — весь DOM UI (экраны, чипы бустов, тосты, карта кампании).
   - `audio.ts` — Web Audio синтез + живые сэмплы (CC0 OpenGameArt) + музыка
@@ -95,4 +95,5 @@
 - Целевые платформы: Android + iOS. Переписывать НЕ нужно: игра остаётся web (Three.js), упаковка в нативные приложения через Capacitor (уже подключён: capacitor.config.ts, папки android/ и ios/, appId com.affy3309.vigil).
 - Команды: npm run sync:android / sync:ios (build + cap sync), open:android / open:ios. Для APK нужен Android SDK (на машине пока нет); для iOS-сборки нужен macOS + Xcode.
 - index.html: viewport-fit=cover, mobile-web-app-capable, theme-color.
-- Герои переезжают с примитивов на GLB: генерация через Tripo API (плагин model3d_generation), первый тест — models/marine.glb (v3.1, 15000 граней). План: 4 архетипа GLB (марин, блейдгвард, терминатор, дредноут) + тинт под героев; fallback — процедурные модели.
+- Герои переехали с примитивов на GLB: 4 архетипа сгенерированы через Tripo API (плагин model3d_generation, v3.1, 15000 граней) — models/marine.glb (task_id 2e9f1893-05cc-4587-bdcf-b009e72874be), bladeguard.glb, terminator.glb, dreadnought.glb; копии для игры в app/public/models/. Привязка: gear "swordshield" → bladeguard, остальные по visual.model. Facing: marine 180°, остальные 270° (GLB_ROT_Y). Материалам GLB добавлена мягкая самоподсветка (emissiveMap=map, emissive 0x5a5a5a) — сцена тёмная. Fallback при ошибке загрузки — процедурные тела. Проверено скринами всех 13 героев (hero-contact.jpg) + VERIFY OK.
+- Известные ограничения: тинт героев (апотекарий/либрарий/капеллан) на GLB не применяется — все марины в красном Экзорцистов; muzzle-точка стрельбы взята от процедурного тела. Возможные доработки: тинт GLB-материалов, GLB для врагов, яркость сцены.

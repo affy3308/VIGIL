@@ -7,6 +7,47 @@
  */
 
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+/** Generated hero meshes (Tripo API). Missing files fall back to the procedural bodies. */
+const GLB_SOURCES: Record<string, string> = {
+  marine: "models/marine.glb",
+  bladeguard: "models/bladeguard.glb",
+  terminator: "models/terminator.glb",
+  dreadnought: "models/dreadnought.glb",
+};
+/** World height each GLB is normalized to (before hero.scale). */
+const GLB_HEIGHT: Record<string, number> = { marine: 2.5, bladeguard: 2.5, terminator: 3.0, dreadnought: 4.0 };
+/** Per-model facing correction so each mesh looks down +Z like the procedural bodies. */
+const GLB_ROT_Y: Record<string, number> = {
+  marine: Math.PI,
+  bladeguard: (3 * Math.PI) / 2,
+  terminator: (3 * Math.PI) / 2,
+  dreadnought: (3 * Math.PI) / 2,
+};
+/** Debug override: ?glbrot=<degrees> rotates the GLB instance (facing calibration). */
+const GLB_ROT_DEBUG = (() => {
+  if (typeof location === "undefined") return null;
+  const v = new URLSearchParams(location.search).get("glbrot");
+  return v === null ? null : (Number(v) * Math.PI) / 180;
+})();
+
+const gltfLoader = new GLTFLoader();
+const glbCache = new Map<string, Promise<THREE.Group | null>>();
+
+function loadGlb(key: string): Promise<THREE.Group | null> {
+  let p = glbCache.get(key);
+  if (!p) {
+    const url = GLB_SOURCES[key];
+    p = !url
+      ? Promise.resolve(null)
+      : new Promise<THREE.Group | null>((resolve) => {
+          gltfLoader.load(url, (g) => resolve(g.scene as THREE.Group), undefined, () => resolve(null));
+        });
+    glbCache.set(key, p);
+  }
+  return p;
+}
 
 export interface PlayerVisual {
   tint: number;
@@ -410,6 +451,36 @@ export function buildPlayerModel(visual: PlayerVisual = DEFAULT_VISUAL): PlayerM
     : visual.model === "terminator" ? buildTerminator()
     : buildMarine();
   group.scale.setScalar(visual.scale);
+
+  // Swap in the generated GLB when it arrives; the procedural body is the fallback.
+  const glbKey = visual.gear === "swordshield" ? "bladeguard" : visual.model;
+  void loadGlb(glbKey).then((scene) => {
+    if (!scene) return;
+    const inst = scene.clone(true);
+    const box = new THREE.Box3().setFromObject(inst);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    if (size.y <= 0) return;
+    const s = (GLB_HEIGHT[glbKey] ?? 2.5) / size.y;
+    inst.scale.setScalar(s);
+    // Lift the PBR textures out of the gloom: reuse the albedo as a soft emissive.
+    inst.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        const std = m as THREE.MeshStandardMaterial;
+        if (!std.isMeshStandardMaterial) continue;
+        std.emissiveMap = std.map ?? null;
+        std.emissive = new THREE.Color(0x5a5a5a);
+        std.roughness = Math.min(std.roughness + 0.1, 1);
+      }
+    });
+    inst.position.set(-center.x * s, -box.min.y * s, -center.z * s);
+    inst.rotation.y = GLB_ROT_DEBUG ?? GLB_ROT_Y[glbKey] ?? Math.PI;
+    while (group.children.length) group.remove(group.children[0]);
+    group.add(inst);
+  });
 
   const muzzleLocal = body.muzzleLocal.multiplyScalar(visual.scale);
   const tmp = new THREE.Vector3();
