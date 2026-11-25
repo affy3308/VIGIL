@@ -5,7 +5,38 @@
  */
 
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { ARENA } from "./config";
+
+/** Generated centerpiece monuments per biome (Tripo API); procedural props stay as fallback decor. */
+const MONUMENT_GLB: Record<number, { url: string; height: number; x: number; z: number; rotY?: number }> = {
+  0: { url: "models/biomes/shrine.glb", height: 7, x: 0, z: -21 },
+  1: { url: "models/biomes/reactor.glb", height: 8, x: 0, z: -21 },
+  2: { url: "models/biomes/wreck.glb", height: 6, x: -20, z: -14 },
+  3: { url: "models/biomes/obelisk.glb", height: 8, x: 0, z: -21 },
+  4: { url: "models/biomes/pylon.glb", height: 7, x: 0, z: -21 },
+  5: { url: "models/biomes/forge.glb", height: 7, x: 0, z: -21 },
+  6: { url: "models/biomes/arch.glb", height: 8, x: 0, z: -21 },
+  7: { url: "models/biomes/spire.glb", height: 8, x: 0, z: -21 },
+};
+const GLB_ROT_DEBUG_WORLD = (() => {
+  if (typeof location === "undefined") return null;
+  const v = new URLSearchParams(location.search).get("glbrot");
+  return v === null ? null : (Number(v) * Math.PI) / 180;
+})();
+const monumentLoader = new GLTFLoader();
+const monumentCache = new Map<string, Promise<THREE.Group | null>>();
+
+function loadMonumentGlb(url: string): Promise<THREE.Group | null> {
+  let p = monumentCache.get(url);
+  if (!p) {
+    p = new Promise<THREE.Group | null>((resolve) => {
+      monumentLoader.load(url, (g) => resolve(g.scene as THREE.Group), undefined, () => resolve(null));
+    });
+    monumentCache.set(url, p);
+  }
+  return p;
+}
 
 /** Biome identities: one per campaign level, in LEVELS order. */
 export interface BiomeDef {
@@ -364,6 +395,8 @@ export class World {
   private biome = 0;
   private altarMat!: THREE.MeshStandardMaterial;
   private statueMat!: THREE.MeshStandardMaterial;
+  /** Old procedural statue — hidden once a biome's GLB monument arrives. */
+  private statueParts: THREE.Object3D[] = [];
   private propsGroup: THREE.Group | null = null;
   private propsDisposables: Array<{ dispose(): void }> = [];
   private propAnims: Array<(t: number) => void> = [];
@@ -475,6 +508,7 @@ export class World {
     );
     halo.position.set(0, 7.6, -20.4);
     scene.add(step1, step2, statueBody, statueHead, halo);
+    this.statueParts = [statueBody, statueHead, halo];
     this.track(altarMat, statueMat, step1.geometry, step2.geometry, statueBody.geometry, statueHead.geometry, halo.geometry, halo.material as THREE.Material);
 
     // ── braziers: flickering war fires ────────────────────────────
@@ -842,6 +876,36 @@ export class World {
     }
 
     this.scene.add(grp);
+
+    // generated centerpiece monument (Tripo API) — swaps in when the file arrives
+    const mon = MONUMENT_GLB[idx];
+    if (mon) {
+      void loadMonumentGlb(mon.url).then((scene) => {
+        if (!scene || this.propsGroup !== grp) return; // biome changed meanwhile
+        for (const p of this.statueParts) p.visible = false; // GLB replaces the placeholder statue
+        const inst = scene.clone(true);
+        const box = new THREE.Box3().setFromObject(inst);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        if (size.y <= 0) return;
+        const s = mon.height / size.y;
+        inst.scale.setScalar(s);
+        inst.position.set(mon.x - center.x * s, -box.min.y * s, mon.z - center.z * s);
+        inst.rotation.y = GLB_ROT_DEBUG_WORLD ?? mon.rotY ?? Math.PI;
+        inst.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          for (const m of mats) {
+            const std = m as THREE.MeshStandardMaterial;
+            if (!std.isMeshStandardMaterial) continue;
+            std.emissiveMap = std.map ?? null;
+            std.emissive = new THREE.Color(0x5a5a5a);
+          }
+        });
+        grp.add(inst);
+      });
+    }
   }
 
   /** Swap the arena furniture for another map; collisions read `this.obstacles`. */

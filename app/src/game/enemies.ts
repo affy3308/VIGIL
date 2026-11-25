@@ -17,8 +17,83 @@
  */
 
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { ARENA } from "./config";
 import { pushOutObstacles, type Obstacle } from "./world";
+
+/** Generated enemy meshes (Tripo API). Missing files fall back to procedural bodies. */
+const ENEMY_GLB: Partial<Record<EnemyKind, { url: string; height: number }>> = {
+  cultist: { url: "models/enemies/cultist.glb", height: 2.0 },
+  brute: { url: "models/enemies/brute.glb", height: 2.9 },
+  spitter: { url: "models/enemies/spitter.glb", height: 1.6 },
+  chaos: { url: "models/enemies/chaos.glb", height: 2.6 },
+  ork: { url: "models/enemies/ork.glb", height: 2.3 },
+  gaunt: { url: "models/enemies/gaunt.glb", height: 1.5 },
+  necron: { url: "models/enemies/necron.glb", height: 2.3 },
+  tau: { url: "models/enemies/tau.glb", height: 2.0 },
+  eldar: { url: "models/enemies/eldar.glb", height: 2.3 },
+  votann: { url: "models/enemies/votann.glb", height: 1.7 },
+};
+/** Facing correction per kind (calibrated via ?glbrot= debug shots). */
+const ENEMY_GLB_ROT: Partial<Record<EnemyKind, number>> = {
+  cultist: (3 * Math.PI) / 2,
+  brute: (3 * Math.PI) / 2,
+  spitter: Math.PI,
+  chaos: (3 * Math.PI) / 2,
+  ork: (3 * Math.PI) / 2,
+  gaunt: Math.PI / 2,
+  necron: Math.PI / 2,
+  tau: Math.PI,
+  eldar: (3 * Math.PI) / 2,
+  votann: Math.PI,
+};
+const GLB_ROT_DEBUG_ENEMY = (() => {
+  if (typeof location === "undefined") return null;
+  const v = new URLSearchParams(location.search).get("glbrot");
+  return v === null ? null : (Number(v) * Math.PI) / 180;
+})();
+
+const enemyGltfLoader = new GLTFLoader();
+const enemyGlbCache = new Map<string, Promise<THREE.Group | null>>();
+
+function loadEnemyGlb(url: string): Promise<THREE.Group | null> {
+  let p = enemyGlbCache.get(url);
+  if (!p) {
+    p = new Promise<THREE.Group | null>((resolve) => {
+      enemyGltfLoader.load(url, (g) => resolve(g.scene as THREE.Group), undefined, () => resolve(null));
+    });
+    enemyGlbCache.set(url, p);
+  }
+  return p;
+}
+
+/** Build a normalized GLB instance for an enemy kind (feet at y=0, faces +Z). */
+function buildEnemyGlbInstance(kind: EnemyKind, scene: THREE.Group): THREE.Group | null {
+  const cfg = ENEMY_GLB[kind];
+  if (!cfg) return null;
+  const inst = scene.clone(true);
+  const box = new THREE.Box3().setFromObject(inst);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  if (size.y <= 0) return null;
+  const s = cfg.height / size.y;
+  inst.scale.setScalar(s);
+  inst.position.set(-center.x * s, -box.min.y * s, -center.z * s);
+  inst.rotation.y = GLB_ROT_DEBUG_ENEMY ?? ENEMY_GLB_ROT[kind] ?? Math.PI;
+  inst.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const m of mats) {
+      const std = m as THREE.MeshStandardMaterial;
+      if (!std.isMeshStandardMaterial) continue;
+      std.emissiveMap = std.map ?? null;
+      std.emissive = new THREE.Color(0x4a4a4a);
+    }
+  });
+  inst.userData.body = true;
+  return inst;
+}
 
 export type EnemyKind =
   | "cultist" | "brute" | "spitter" | "boss"
@@ -1042,9 +1117,26 @@ export class EnemyPool {
       // rebuild the visual only when the kind changes for this slot
       if (e.mesh.userData.kind !== kind) {
         e.mesh.clear();
-        e.mesh.add(this.assets[kind].build());
+        const body = this.assets[kind].build();
+        body.userData.body = true;
+        e.mesh.add(body);
         e.mesh.userData.kind = kind;
+        e.mesh.userData.glb = false;
         e.mesh.add(e.bar); // clear() also detaches the HP bar — put it back
+      }
+      // swap the procedural body for the generated GLB once it arrives
+      const glbCfg = ENEMY_GLB[kind];
+      if (glbCfg && !e.mesh.userData.glb) {
+        e.mesh.userData.glb = true;
+        void loadEnemyGlb(glbCfg.url).then((scene) => {
+          if (!scene || e.mesh.userData.kind !== kind) return;
+          const inst = buildEnemyGlbInstance(kind, scene);
+          if (!inst) return;
+          for (const child of [...e.mesh.children]) {
+            if (child.userData.body) e.mesh.remove(child);
+          }
+          e.mesh.add(inst);
+        });
       }
       e.baseScale = kind === "boss" ? 1 : 1;
       e.mesh.position.set(x, 0, z);

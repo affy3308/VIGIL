@@ -1,0 +1,2 @@
+Job log: C:\Users\izucc\AppData\Local\Temp\model3d_generation-job-mf_5m1nj\worker.log
+Job PID file: C:\Users\izucc\AppData\Local\Temp\model3d_generation-job-mf_5m1nj\worker.pid
