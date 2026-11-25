@@ -22,6 +22,10 @@ export interface BiomeDef {
   brazier: number;
   /** Map obstacle blocks tint. */
   obstacle: number;
+  /** Central monument (statue / monolith) tint + rose-window cast. */
+  monument: number;
+  /** Accent colour of the biome's glowing props. */
+  propGlow: number;
 }
 
 export const BIOMES: BiomeDef[] = [
@@ -29,41 +33,49 @@ export const BIOMES: BiomeDef[] = [
     name: "МОНАСТЫРЬ-СОБОР", floorStyle: "stone",
     bg: 0x05060a, fog: 0x07080d, ambient: 0x3a4152, hemiSky: 0x44506e, hemiGround: 0x14100c,
     moon: 0x9db4d4, window: ["#1d4a56", "#2e7d8c", "#9adbe2"], brazier: 0xff7a26, obstacle: 0x2a2e3a,
+    monument: 0x2a2e3a, propGlow: 0xffc46a,
   },
   {
     name: "УДАРНЫЙ КРЕЙСЕР", floorStyle: "metal",
     bg: 0x04060a, fog: 0x060a10, ambient: 0x2e3a4a, hemiSky: 0x3a4e6e, hemiGround: 0x0e0c0a,
     moon: 0x8ab4e2, window: ["#5e3a10", "#a87a1c", "#ffd27a"], brazier: 0xffb060, obstacle: 0x2e3440,
+    monument: 0x2e3440, propGlow: 0xff4a3a,
   },
   {
     name: "АРМАГЕДДОН", floorStyle: "ash",
     bg: 0x080505, fog: 0x0d0806, ambient: 0x4a3630, hemiSky: 0x6e4638, hemiGround: 0x140f0a,
     moon: 0xff9a6a, window: ["#5e2c10", "#a85a1c", "#ffd27a"], brazier: 0xff8a40, obstacle: 0x33302a,
+    monument: 0x3a322a, propGlow: 0xff7a30,
   },
   {
     name: "ГРОБНИЦА", floorStyle: "stone",
     bg: 0x030604, fog: 0x050c06, ambient: 0x24382c, hemiSky: 0x2e5e3a, hemiGround: 0x0a120a,
     moon: 0x7ac48a, window: ["#0e4a2a", "#1c8c4a", "#7affb0"], brazier: 0x59ff8a, obstacle: 0x26302a,
+    monument: 0x18201a, propGlow: 0x59ff8a,
   },
   {
     name: "РАВНИНЫ ТАУ", floorStyle: "ash",
     bg: 0x0a0805, fog: 0x100c08, ambient: 0x4a4034, hemiSky: 0x8c7a5e, hemiGround: 0x141008,
     moon: 0xffd8a8, window: ["#3a4e5e", "#6a9ab8", "#c8e8ff"], brazier: 0x6ab8ff, obstacle: 0x3a3630,
+    monument: 0x8a8f92, propGlow: 0x6adfff,
   },
   {
     name: "ЗАЛЫ ВОТАННОВ", floorStyle: "metal",
     bg: 0x0a0504, fog: 0x120806, ambient: 0x4a2e20, hemiSky: 0x8c4a28, hemiGround: 0x140a06,
     moon: 0xff9a5a, window: ["#5e1c10", "#b84a1c", "#ffb060"], brazier: 0xff8a30, obstacle: 0x36302a,
+    monument: 0x3a2a20, propGlow: 0xff9a30,
   },
   {
     name: "МИР-КОРАБЛЬ", floorStyle: "stone",
     bg: 0x05080a, fog: 0x080e10, ambient: 0x3a4a4e, hemiSky: 0x5e8a8c, hemiGround: 0x101414,
     moon: 0xb8e8e2, window: ["#14505e", "#2a9ab0", "#a8fff2"], brazier: 0x7df0ff, obstacle: 0x3a4442,
+    monument: 0xc8d4d2, propGlow: 0x7df0ff,
   },
   {
     name: "ЖИВОЙ КОРАБЛЬ", floorStyle: "warp",
     bg: 0x070410, fog: 0x0d0612, ambient: 0x452e55, hemiSky: 0x5e3a7a, hemiGround: 0x140a1a,
     moon: 0xb48ad4, window: ["#4a145e", "#8c2fa8", "#e2a8ff"], brazier: 0xc86aff, obstacle: 0x3a2438,
+    monument: 0x4a2438, propGlow: 0xe26aff,
   },
 ];
 
@@ -350,6 +362,11 @@ export class World {
   private flameMat!: THREE.MeshBasicMaterial;
   private texCache = new Map<string, THREE.CanvasTexture>();
   private biome = 0;
+  private altarMat!: THREE.MeshStandardMaterial;
+  private statueMat!: THREE.MeshStandardMaterial;
+  private propsGroup: THREE.Group | null = null;
+  private propsDisposables: Array<{ dispose(): void }> = [];
+  private propAnims: Array<(t: number) => void> = [];
 
   constructor() {
     const scene = new THREE.Scene();
@@ -440,12 +457,14 @@ export class World {
     this.track(roseTex, rose.geometry, this.roseMat);
 
     // ── altar + the Emperor's fallen statue silhouette ────────────
-    const altarMat = new THREE.MeshStandardMaterial({ color: 0x2a2e3a, roughness: 0.8 });
+    this.altarMat = new THREE.MeshStandardMaterial({ color: 0x2a2e3a, roughness: 0.8 });
+    const altarMat = this.altarMat;
     const step1 = new THREE.Mesh(new THREE.BoxGeometry(10, 0.6, 4), altarMat);
     step1.position.set(0, 0.3, -19);
     const step2 = new THREE.Mesh(new THREE.BoxGeometry(7, 0.6, 3), altarMat);
     step2.position.set(0, 0.9, -19.4);
-    const statueMat = new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.6, metalness: 0.4 });
+    this.statueMat = new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.6, metalness: 0.4 });
+    const statueMat = this.statueMat;
     const statueBody = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.6, 6, 8), statueMat);
     statueBody.position.set(0, 4.2, -20);
     const statueHead = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 8), statueMat);
@@ -495,6 +514,334 @@ export class World {
       this.obstacleMeshes.push(m);
     }
     this.track(obsGeo, this.obstacleMat);
+
+    // ── biome-specific props (candles, consoles, obelisks, boils…) ──
+    this.buildProps(0);
+  }
+
+  /** Rebuild the biome's decorative prop set; old props are disposed. */
+  private buildProps(idx: number): void {
+    for (const d of this.propsDisposables) d.dispose();
+    this.propsDisposables = [];
+    this.propAnims = [];
+    if (this.propsGroup) this.propsGroup.removeFromParent();
+    const grp = new THREE.Group();
+    this.propsGroup = grp;
+
+    const std = (color: number, rough = 0.7, metal = 0.3) => {
+      const m = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
+      this.propsDisposables.push(m);
+      return m;
+    };
+    const glow = (color: number) => {
+      const m = new THREE.MeshBasicMaterial({ color });
+      this.propsDisposables.push(m);
+      return m;
+    };
+    const put = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number): THREE.Mesh => {
+      this.propsDisposables.push(geo);
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      grp.add(m);
+      return m;
+    };
+    const GX = 24; // keep props off the main fighting ground
+    const GZ = 16;
+
+    if (idx === 0) {
+      // МОНАСТЫРЬ-СОБОР: канделябры, кадила, разбитые скамьи
+      const wax = std(0xd8d3c3, 0.6, 0.05);
+      const iron = std(0x14161a, 0.5, 0.8);
+      const flame = glow(0xffc46a);
+      const stone = std(0x23262e, 0.9, 0.05);
+      for (const [cx, cz] of [[-GX, -GZ], [GX, -GZ], [-GX, GZ], [GX, GZ], [0, GZ + 2]] as Array<[number, number]>) {
+        put(new THREE.CylinderGeometry(0.5, 0.7, 0.25, 10), iron, cx, 0.12, cz);
+        const flames: THREE.Mesh[] = [];
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2;
+          const r = i === 0 ? 0 : 0.32;
+          const h = 0.5 + (i % 3) * 0.22;
+          put(new THREE.CylinderGeometry(0.05, 0.06, h, 6), wax, cx + Math.cos(a) * r, 0.25 + h / 2, cz + Math.sin(a) * r);
+          flames.push(put(new THREE.ConeGeometry(0.05, 0.16, 6), flame, cx + Math.cos(a) * r, 0.33 + h, cz + Math.sin(a) * r));
+        }
+        const light = new THREE.PointLight(0xffb060, 6, 8, 1.8);
+        light.position.set(cx, 1.4, cz);
+        grp.add(light);
+        const ph = Math.random() * 6;
+        this.propAnims.push((t) => {
+          const f = 0.8 + Math.sin(t * 11 + ph) * 0.25;
+          light.intensity = 5 + f * 2.5;
+          for (const fl of flames) fl.scale.set(f, f * 1.2, f);
+        });
+      }
+      // hanging censers by the side colonnades
+      for (const sx of [-1, 1]) {
+        for (const cz of [-7, 7]) {
+          put(new THREE.CylinderGeometry(0.03, 0.03, 3.2, 5), iron, sx * 26, 10.5, cz);
+          const bowl = put(new THREE.SphereGeometry(0.34, 10, 8), iron, sx * 26, 8.8, cz);
+          const coal = put(new THREE.SphereGeometry(0.2, 8, 6), glow(0xff8a40), sx * 26, 8.9, cz);
+          const ph = Math.random() * 6;
+          this.propAnims.push((t) => {
+            bowl.position.x = sx * 26 + Math.sin(t * 0.9 + ph) * 0.3;
+            coal.position.x = bowl.position.x;
+          });
+        }
+      }
+      // broken pews
+      for (let i = 0; i < 6; i++) {
+        const pew = put(new THREE.BoxGeometry(3.4, 0.5, 0.5), stone, -9 + (i % 3) * 9, 0.35, 12 + Math.floor(i / 3) * 3.4);
+        pew.rotation.y = (Math.random() - 0.5) * 0.35;
+        put(new THREE.BoxGeometry(3.4, 0.7, 0.12), stone, pew.position.x, 0.75, pew.position.z - 0.28).rotation.y = pew.rotation.y;
+      }
+    } else if (idx === 1) {
+      // УДАРНЫЙ КРЕЙСЕР: консоли, трубы, ящики, аварийные маячки
+      const hull = std(0x23262e, 0.6, 0.7);
+      const pipe = std(0x3a3f4a, 0.45, 0.85);
+      const screen = glow(0x6adfff);
+      const screen2 = glow(0xffb060);
+      for (let i = 0; i < 5; i++) {
+        const x = -16 + i * 8;
+        put(new THREE.BoxGeometry(3, 1.5, 1), hull, x, 0.75, -18.5);
+        const scr = put(new THREE.PlaneGeometry(2.4, 0.9), i % 2 ? screen : screen2, x, 1.7, -18.4);
+        scr.rotation.x = -0.5;
+        const ph = Math.random() * 6;
+        this.propAnims.push((t) => { scr.visible = Math.sin(t * 7 + ph) > -0.85; });
+      }
+      for (const sx of [-1, 1]) {
+        for (const py of [2.5, 3.4]) {
+          const p = put(new THREE.CylinderGeometry(0.28, 0.28, 40, 10), pipe, sx * 29.5, py, 0);
+          p.rotation.x = Math.PI / 2;
+        }
+      }
+      for (let i = 0; i < 7; i++) {
+        const x = -GX + Math.random() * GX * 2;
+        const z = -8 + Math.random() * 20;
+        if (Math.abs(x) < 8 && Math.abs(z) < 8) continue;
+        const c = put(new THREE.BoxGeometry(1.4, 1.4, 1.4), std(0x4a4232, 0.8, 0.2), x, 0.7, z);
+        c.rotation.y = Math.random();
+      }
+      for (const sx of [-1, 1]) {
+        const beacon = put(new THREE.SphereGeometry(0.18, 8, 6), glow(0xff4a3a), sx * 28, 5.5, -19);
+        const light = new THREE.PointLight(0xff4a3a, 8, 14, 1.8);
+        light.position.set(sx * 28, 5.5, -19);
+        grp.add(light);
+        const ph = sx * 2;
+        this.propAnims.push((t) => {
+          const on = Math.sin(t * 3.5 + ph) > 0;
+          light.intensity = on ? 9 : 0.5;
+          beacon.scale.setScalar(on ? 1.3 : 0.8);
+        });
+      }
+    } else if (idx === 2) {
+      // АРМАГЕДДОН: скальные пики, остовы машин, бочки, кострища
+      const rock = std(0x4a423a, 0.95, 0.05);
+      const rust = std(0x5e3a20, 0.85, 0.35);
+      for (let i = 0; i < 10; i++) {
+        const x = -GX + Math.random() * GX * 2;
+        const z = -GZ + Math.random() * GZ * 2;
+        if (Math.abs(x) < 9 && Math.abs(z) < 9) continue;
+        const h = 2 + Math.random() * 4;
+        const s = put(new THREE.ConeGeometry(0.7 + Math.random() * 0.8, h, 6), rock, x, h / 2 - 0.2, z);
+        s.rotation.z = (Math.random() - 0.5) * 0.25;
+        s.rotation.y = Math.random() * 3;
+      }
+      for (const [x, z, ry] of [[-16, -10, 0.5], [15, 8, 2.2], [-12, 12, 1.1]] as Array<[number, number, number]>) {
+        const wreck = put(new THREE.BoxGeometry(5, 2.2, 2.6), rust, x, 0.8, z);
+        wreck.rotation.set(0.12, ry, 0.08);
+        put(new THREE.BoxGeometry(1.8, 1.2, 2.0), rust, x + 2, 0.5, z + 1).rotation.y = ry + 0.7;
+      }
+      for (let i = 0; i < 8; i++) {
+        const x = -GX + Math.random() * GX * 2;
+        const z = -GZ + Math.random() * GZ * 2;
+        if (Math.abs(x) < 8 && Math.abs(z) < 8) continue;
+        put(new THREE.CylinderGeometry(0.45, 0.45, 1.1, 10), rust, x, 0.55, z);
+      }
+      for (const [x, z] of [[-20, 0], [19, -12], [6, 15]] as Array<[number, number]>) {
+        put(new THREE.CylinderGeometry(1.1, 1.3, 0.3, 10), rock, x, 0.1, z);
+        const fire = put(new THREE.ConeGeometry(0.6, 1.4, 7), glow(0xff7a30), x, 0.9, z);
+        const light = new THREE.PointLight(0xff7a30, 10, 12, 1.8);
+        light.position.set(x, 1.6, z);
+        grp.add(light);
+        const ph = Math.random() * 6;
+        this.propAnims.push((t) => {
+          const f = 0.85 + Math.sin(t * 13 + ph) * 0.3;
+          fire.scale.set(f, f * 1.25, f);
+          light.intensity = 8 + f * 4;
+        });
+      }
+    } else if (idx === 3) {
+      // ГРОБНИЦА: обелиски с глифами, саркофаги, монолит
+      const blackstone = std(0x10140f, 0.5, 0.6);
+      const glyph = glow(0x59ff8a);
+      for (const [x, z] of [[-GX, -GZ], [GX, -GZ], [-GX, GZ], [GX, GZ], [-GX, 0], [GX, 0]] as Array<[number, number]>) {
+        put(new THREE.CylinderGeometry(0.55, 1.0, 6.5, 4), blackstone, x, 3.25, z).rotation.y = Math.PI / 4;
+        const strip = put(new THREE.BoxGeometry(0.14, 4.6, 0.14), glyph, x, 3.1, z + 0.72);
+        const ph = Math.random() * 6;
+        this.propAnims.push((t) => {
+          const s = 0.7 + Math.sin(t * 2.2 + ph) * 0.3;
+          strip.scale.set(s, 1, s);
+        });
+      }
+      for (let i = 0; i < 4; i++) {
+        const x = -15 + i * 10;
+        const slab = put(new THREE.BoxGeometry(2.2, 1.0, 3.4), blackstone, x, 0.5, 13);
+        slab.rotation.y = (Math.random() - 0.5) * 0.3;
+        put(new THREE.BoxGeometry(1.8, 0.25, 2.9), std(0x1a3a24, 0.4, 0.5), x, 1.08, 13).rotation.y = slab.rotation.y;
+      }
+      // central monolith shard behind the altar line
+      put(new THREE.CylinderGeometry(0.8, 1.6, 9, 4), blackstone, -20, 4.5, -18).rotation.y = Math.PI / 4;
+      const monoGlow = put(new THREE.BoxGeometry(0.2, 6.5, 0.2), glyph, -20, 4.2, -17.1);
+      this.propAnims.push((t) => { monoGlow.scale.y = 0.8 + Math.sin(t * 1.6) * 0.2; });
+      const light = new THREE.PointLight(0x59ff8a, 9, 22, 1.8);
+      light.position.set(0, 4, -10);
+      grp.add(light);
+      this.propAnims.push((t) => { light.intensity = 7 + Math.sin(t * 2.2) * 3; });
+    } else if (idx === 4) {
+      // РАВНИНЫ ТАУ: платформы, голопанели, дроны, купола
+      const ceramic = std(0xb8bcc0, 0.35, 0.4);
+      const holo = glow(0x6adfff);
+      const dark = std(0x3a3f46, 0.5, 0.6);
+      for (const [x, z] of [[-16, -10], [16, 10], [0, 14]] as Array<[number, number]>) {
+        put(new THREE.CylinderGeometry(2.6, 2.9, 0.35, 18), ceramic, x, 0.17, z);
+        put(new THREE.TorusGeometry(2.2, 0.07, 8, 32), holo, x, 0.38, z).rotation.x = Math.PI / 2;
+      }
+      for (let i = 0; i < 4; i++) {
+        const x = -18 + i * 12;
+        const panel = put(new THREE.PlaneGeometry(2.4, 1.4), holo, x, 3.2, -17);
+        panel.material = holo;
+        const ph = Math.random() * 6;
+        this.propAnims.push((t) => {
+          panel.position.y = 3.2 + Math.sin(t * 1.4 + ph) * 0.15;
+          panel.rotation.y = Math.sin(t * 0.6 + ph) * 0.2;
+        });
+        put(new THREE.CylinderGeometry(0.06, 0.09, 2.6, 6), dark, x, 1.3, -17.2);
+      }
+      for (let i = 0; i < 3; i++) {
+        const drone = put(new THREE.SphereGeometry(0.45, 12, 8), ceramic, -10 + i * 10, 3.5, 4);
+        drone.scale.set(1, 0.55, 1);
+        const eye = put(new THREE.SphereGeometry(0.12, 8, 6), holo, drone.position.x, 3.5, 4.42);
+        const cx = drone.position.x, cz = 4, ph = i * 2.1;
+        this.propAnims.push((t) => {
+          const a = t * 0.5 + ph;
+          drone.position.set(cx + Math.cos(a) * 2.4, 3.5 + Math.sin(t * 2 + ph) * 0.3, cz + Math.sin(a) * 2.4);
+          eye.position.set(drone.position.x, drone.position.y, drone.position.z + 0.42);
+        });
+      }
+      for (const sx of [-1, 1]) {
+        const dome = put(new THREE.SphereGeometry(4, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2), ceramic, sx * 26, 0, 14);
+        dome.scale.set(1, 0.7, 1);
+      }
+    } else if (idx === 5) {
+      // ЗАЛЫ ВОТАННОВ: кузни, лавовые каналы, машины, ковши
+      const ironworks = std(0x2e2a26, 0.55, 0.75);
+      const lava = glow(0xff9a30);
+      const stone = std(0x3a332c, 0.9, 0.1);
+      for (const [x, z, w] of [[-14, -12, 10], [12, 10, 12], [-6, 15, 8]] as Array<[number, number, number]>) {
+        const channel = put(new THREE.BoxGeometry(w, 0.12, 0.9), lava, x, 0.07, z);
+        const ph = Math.random() * 6;
+        this.propAnims.push((t) => {
+          const s = 0.85 + Math.sin(t * 3 + ph) * 0.15;
+          channel.scale.set(1, 1, s);
+        });
+        put(new THREE.BoxGeometry(w + 0.6, 0.3, 1.7), stone, x, 0.05, z);
+        channel.position.y = 0.22;
+      }
+      for (const [x, z] of [[-GX, -10], [GX, 4]] as Array<[number, number]>) {
+        put(new THREE.BoxGeometry(2.4, 1.1, 1.4), ironworks, x, 0.55, z); // anvil block
+        put(new THREE.BoxGeometry(1.4, 0.5, 0.9), ironworks, x, 1.35, z);
+        const light = new THREE.PointLight(0xff9a30, 8, 10, 1.8);
+        light.position.set(x, 2.2, z);
+        grp.add(light);
+        const ph = Math.random() * 6;
+        this.propAnims.push((t) => { light.intensity = 6 + (Math.sin(t * 8 + ph) * 0.5 + 0.5) * 5; });
+      }
+      for (let i = 0; i < 3; i++) {
+        const x = -10 + i * 10;
+        put(new THREE.BoxGeometry(2.6, 2.6, 2), ironworks, x, 1.3, -17.5);
+        const piston = put(new THREE.CylinderGeometry(0.35, 0.35, 1.6, 10), stone, x, 3.3, -17.5);
+        const ph = i * 1.7;
+        this.propAnims.push((t) => { piston.position.y = 3.3 + Math.sin(t * 2.4 + ph) * 0.5; });
+      }
+      for (let i = 0; i < 5; i++) {
+        const x = -GX + Math.random() * GX * 2;
+        const z = -6 + Math.random() * 16;
+        if (Math.abs(x) < 8 && Math.abs(z) < 8) continue;
+        const bucket = put(new THREE.CylinderGeometry(0.7, 0.55, 0.9, 10), ironworks, x, 0.45, z);
+        bucket.rotation.z = (Math.random() - 0.5) * 0.4;
+        put(new THREE.SphereGeometry(0.45, 8, 6), lava, x, 0.85, z).scale.y = 0.4;
+      }
+    } else if (idx === 6) {
+      // МИР-КОРАБЛЬ: костяные арки, кристаллы духов, рёбра психопластика
+      const bone = std(0xd4dcd8, 0.35, 0.25);
+      const crystal = glow(0x7df0ff);
+      for (const [x, z, ry] of [[-18, -8, 0.4], [18, 6, -0.6], [-6, 14, 1.2]] as Array<[number, number, number]>) {
+        const arch = put(new THREE.TorusGeometry(3.4, 0.4, 10, 24, Math.PI), bone, x, 0, z);
+        arch.rotation.y = ry;
+      }
+      for (const sx of [-1, 1]) {
+        for (let i = 0; i < 4; i++) {
+          const rib = put(new THREE.CylinderGeometry(0.22, 0.4, 9, 8), bone, sx * (27.5 - i * 0.3), 4.5, -14 + i * 9);
+          rib.rotation.z = sx * -0.35;
+        }
+      }
+      const crystals: THREE.Mesh[] = [];
+      for (const [x, z] of [[-12, 6], [10, -12], [4, 2], [-20, 14], [20, -4]] as Array<[number, number]>) {
+        const cr = put(new THREE.OctahedronGeometry(0.55, 0), crystal, x, 1.4, z);
+        put(new THREE.CylinderGeometry(0.3, 0.5, 0.8, 8), bone, x, 0.4, z);
+        crystals.push(cr);
+        const light = new THREE.PointLight(0x7df0ff, 4, 7, 1.8);
+        light.position.set(x, 1.6, z);
+        grp.add(light);
+      }
+      this.propAnims.push((t) => {
+        for (let i = 0; i < crystals.length; i++) {
+          crystals[i].rotation.y = t * 0.8 + i;
+          crystals[i].position.y = 1.4 + Math.sin(t * 1.6 + i * 1.3) * 0.18;
+        }
+      });
+    } else {
+      // ЖИВОЙ КОРАБЛЬ: волдыри, вены, хитиновые шипы, лужи слизи
+      const flesh = std(0x7a3a4a, 0.55, 0.1);
+      const chitin = std(0x2a1626, 0.5, 0.3);
+      const vein = glow(0xe26aff);
+      const boils: THREE.Mesh[] = [];
+      for (const [bx, bz] of [[-GX, -GZ], [GX, -GZ], [-GX, GZ], [GX, GZ], [0, GZ + 1], [-14, 0], [14, -6]] as Array<[number, number]>) {
+        for (let i = 0; i < 4; i++) {
+          const r = 0.3 + Math.random() * 0.45;
+          const boil = put(new THREE.SphereGeometry(r, 10, 8), flesh, bx + (Math.random() - 0.5) * 1.6, r * 0.6, bz + (Math.random() - 0.5) * 1.6);
+          boils.push(boil);
+        }
+      }
+      this.propAnims.push((t) => {
+        for (let i = 0; i < boils.length; i++) {
+          const s = 1 + Math.sin(t * 2.6 + i * 0.9) * 0.16;
+          boils[i].scale.set(s, s * 0.9, s);
+        }
+      });
+      for (let i = 0; i < 6; i++) {
+        const x = -20 + i * 8;
+        const v = put(new THREE.CylinderGeometry(0.1, 0.14, 12, 6), vein, x, 0.12, 18.5);
+        v.rotation.z = Math.PI / 2;
+        v.rotation.y = (Math.random() - 0.5) * 0.6;
+        const ph = i * 1.1;
+        this.propAnims.push((t) => { v.scale.set(1, 0.8 + Math.sin(t * 3.2 + ph) * 0.35, 1); });
+      }
+      for (let i = 0; i < 8; i++) {
+        const x = -GX + Math.random() * GX * 2;
+        const z = -GZ + Math.random() * GZ * 2;
+        if (Math.abs(x) < 8 && Math.abs(z) < 8) continue;
+        const h = 1.6 + Math.random() * 2.4;
+        const spike = put(new THREE.ConeGeometry(0.4, h, 6), chitin, x, h / 2 - 0.1, z);
+        spike.rotation.z = (Math.random() - 0.5) * 0.5;
+      }
+      for (const [x, z] of [[-10, -14], [12, 14], [18, 2]] as Array<[number, number]>) {
+        const pool = put(new THREE.CylinderGeometry(1.6, 1.8, 0.08, 14), glow(0x6a2a7a), x, 0.05, z);
+        const ph = Math.random() * 6;
+        this.propAnims.push((t) => { pool.scale.setScalar(1 + Math.sin(t * 1.8 + ph) * 0.08); });
+      }
+    }
+
+    this.scene.add(grp);
   }
 
   /** Swap the arena furniture for another map; collisions read `this.obstacles`. */
@@ -562,6 +909,10 @@ export class World {
     this.flameMat.color.setHex(b.brazier);
     for (const br of this.braziers) br.light.color.setHex(b.brazier);
     this.obstacleMat.color.setHex(b.obstacle);
+    this.altarMat.color.setHex(b.monument);
+    this.statueMat.color.setHex(b.monument);
+    this.roseMat.color.setHex(b.propGlow);
+    this.buildProps(idx);
   }
 
   /** Idle motion: fire flicker + rose window breathing — the scene stays alive even on the title screen. */
@@ -573,10 +924,14 @@ export class World {
       b.flame.scale.set(s, 1 + f * 0.25, s);
     }
     this.roseMat.opacity = 0.85 + Math.sin(t * 0.7) * 0.15;
+    for (const anim of this.propAnims) anim(t);
   }
 
   dispose(): void {
     for (const d of this.disposables) d.dispose();
     this.disposables = [];
+    for (const d of this.propsDisposables) d.dispose();
+    this.propsDisposables = [];
+    this.propAnims = [];
   }
 }

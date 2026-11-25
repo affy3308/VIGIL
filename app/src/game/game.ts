@@ -466,6 +466,7 @@ export class Game {
     this.player.dispose();
     this.player = buildPlayerModel({
       tint: this.hero.tint, trim: this.hero.trim, scale: this.hero.scale, model: this.hero.model,
+      gear: this.hero.gear,
     });
     this.player.group.position.copy(pos);
     this.world.scene.add(this.player.group);
