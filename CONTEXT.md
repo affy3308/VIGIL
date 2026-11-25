@@ -90,3 +90,9 @@
 - world.ts: buildProps(idx) — уникальные анимированные пропсы для 8 биомов (канделябры/консоли/скалы/обелиски/голопанели/лавовые каналы/кристаллы/волдыри); BiomeDef += monument, propGlow.
 - Референсы лежат в refs/ (Pinterest + warhammer40k.fandom.com).
 - Съёмка: app/scripts/temp-shots.mjs (удаляется после прогона); скрины в hero-shots/, biome-shots/.
+
+## Обновление 2026-11-26 (2): мобильные платформы + GLB-герои
+- Целевые платформы: Android + iOS. Переписывать НЕ нужно: игра остаётся web (Three.js), упаковка в нативные приложения через Capacitor (уже подключён: capacitor.config.ts, папки android/ и ios/, appId com.affy3309.vigil).
+- Команды: npm run sync:android / sync:ios (build + cap sync), open:android / open:ios. Для APK нужен Android SDK (на машине пока нет); для iOS-сборки нужен macOS + Xcode.
+- index.html: viewport-fit=cover, mobile-web-app-capable, theme-color.
+- Герои переезжают с примитивов на GLB: генерация через Tripo API (плагин model3d_generation), первый тест — models/marine.glb (v3.1, 15000 граней). План: 4 архетипа GLB (марин, блейдгвард, терминатор, дредноут) + тинт под героев; fallback — процедурные модели.

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">VIGIL: Последний Оплот</string>
+    <string name="title_activity_main">VIGIL: Последний Оплот</string>
+    <string name="package_name">com.affy3309.vigil</string>
+    <string name="custom_url_scheme">com.affy3309.vigil</string>
+</resources>
